@@ -9,12 +9,16 @@ import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.ExtractedTextRequest;
 import android.view.inputmethod.InputConnection;
 import java.util.Iterator;
+import juloo.keyboard2.rime.Rime;
+import juloo.keyboard2.rime.RimeEngine;
+import juloo.keyboard2.rime.RimeInput;
 import juloo.keyboard2.suggestions.Suggestions;
 
 public final class KeyEventHandler
   implements Config.IKeyEventHandler,
              ClipboardHistoryService.ClipboardPasteCallback,
-             CurrentlyTypedWord.Callback
+             CurrentlyTypedWord.Callback,
+             RimeInput.Callback
 {
   Config _config;
   IReceiver _recv;
@@ -34,8 +38,12 @@ public final class KeyEventHandler
   /** Remember the action that was handled. This is used by autocorrect. */
   LastAction _last_action = null;
   LastAction _next_last_action = null;
+  RimeInput _rime;
+  /** Whether the Rime composition is shown inline in the editor. */
+  boolean _rime_inline_composing = false;
 
-  public KeyEventHandler(Config conf, IReceiver recv, Suggestions sg)
+  public KeyEventHandler(Config conf, IReceiver recv, Suggestions sg,
+      RimeEngine rime_engine)
   {
     _config = conf;
     _recv = recv;
@@ -45,18 +53,47 @@ public final class KeyEventHandler
     _mods = Pointers.Modifiers.EMPTY;
     _suggestions = sg;
     _typedword = new CurrentlyTypedWord(handler, this);
+    _rime = new RimeInput(rime_engine, this);
+  }
+
+  public RimeInput rime() { return _rime; }
+
+  /** Whether Rime is enabled for the current editor. */
+  public boolean rime_enabled()
+  {
+    return _config.rime_enabled && _config.editor_config.rime_allowed;
   }
 
   /** Editing just started. */
   public void started()
   {
     InputConnection ic = _recv.getCurrentInputConnection();
+    // Must be enabled before autocapitalisation starts.
+    _rime.set_enabled(rime_enabled());
     _autocap.started(_config, ic);
     _typedword.started(_config, ic);
     _suggestions.started();
     _move_cursor_force_fallback =
       _config.editor_config.should_move_cursor_force_fallback;
     _last_action = null;
+    _rime_inline_composing = false;
+    _rime.reset();
+    _rime.refresh();
+  }
+
+  /** Editing finished. */
+  public void finished()
+  {
+    if (_rime.is_composing())
+      _rime.reset();
+    _rime_inline_composing = false;
+  }
+
+  /** The configuration changed. */
+  public void config_changed()
+  {
+    _rime.set_enabled(rime_enabled());
+    _rime.refresh();
   }
 
   /** Selection has been updated. */
@@ -109,10 +146,10 @@ public final class KeyEventHandler
     update_meta_state(mods);
     switch (key.getKind())
     {
-      case Char: send_text(String.valueOf(key.getChar())); break;
-      case String: send_text(key.getString()); break;
-      case Event: _recv.handle_event_key(key.getEvent()); break;
-      case Keyevent: send_key_down_up(key.getKeyevent()); break;
+      case Char: handle_char(key.getChar()); break;
+      case String: _rime.commit_pending(); send_text(key.getString()); break;
+      case Event: handle_event(key.getEvent()); break;
+      case Keyevent: handle_keyevent(key.getKeyevent()); break;
       case Modifier: break;
       case Editing: handle_editing_key(key.getEditing()); break;
       case Compose_pending: _recv.set_compose_pending(true); break;
@@ -151,7 +188,90 @@ public final class KeyEventHandler
   @Override
   public void paste_from_clipboard_pane(String content)
   {
+    _rime.commit_pending();
     send_text(content);
+  }
+
+  void handle_char(char c)
+  {
+    // The character is already modified by Shift.
+    int mask = RimeInput.mask_of_meta_state(_meta_state) & ~Rime.MASK_SHIFT;
+    if (!_rime.handle_char(c, mask))
+      send_text(String.valueOf(c));
+  }
+
+  void handle_keyevent(int keycode)
+  {
+    if (!_rime.handle_keyevent(keycode,
+          RimeInput.mask_of_meta_state(_meta_state)))
+      send_key_down_up(keycode);
+  }
+
+  void handle_event(KeyValue.Event ev)
+  {
+    switch (ev)
+    {
+      case ACTION:
+        if (_rime.handle_enter())
+          return;
+        break;
+      case RIME_TOGGLE_ASCII:
+        _rime.toggle_ascii_mode();
+        return;
+      case RIME_SWITCHER:
+        _rime.open_switcher();
+        return;
+      case SWITCH_EMOJI:
+      case SWITCH_CLIPBOARD:
+      case CHANGE_METHOD_PICKER:
+      case CHANGE_METHOD_PREV:
+      case CHANGE_METHOD_NEXT:
+      case HIDE_SELF:
+      case SWITCH_VOICE_TYPING:
+        _rime.commit_pending();
+        break;
+      default:
+        break;
+    }
+    _recv.handle_event_key(ev);
+  }
+
+  @Override
+  public void rime_commit(String text)
+  {
+    InputConnection conn = _recv.getCurrentInputConnection();
+    if (conn == null)
+      return;
+    // [commitText] replaces the inline composition, if any.
+    _rime_inline_composing = false;
+    send_text(text);
+  }
+
+  @Override
+  public void rime_update(Rime.Context ctx, Rime.Status status)
+  {
+    if (_config.rime_inline_preedit)
+    {
+      InputConnection conn = _recv.getCurrentInputConnection();
+      String preedit = (ctx == null) ? null : ctx.commit_text_preview;
+      if (preedit == null && ctx != null)
+        preedit = ctx.preedit;
+      if (conn != null)
+      {
+        if (preedit != null && preedit.length() > 0)
+        {
+          conn.setComposingText(preedit, 1);
+          _rime_inline_composing = true;
+        }
+        else if (_rime_inline_composing)
+        {
+          conn.setComposingText("", 1);
+          conn.finishComposingText();
+          _rime_inline_composing = false;
+        }
+      }
+    }
+    _recv.set_rime_state(ctx, status);
   }
 
   @Override
@@ -296,6 +416,31 @@ public final class KeyEventHandler
   {
     switch (ev)
     {
+      case SPACE_BAR:
+        if (_rime.active())
+        {
+          if (!_rime.handle_space(0))
+            send_text(" ");
+          return;
+        }
+        break;
+      case BACKSPACE:
+        if (_rime.handle_backspace())
+          return;
+        break;
+      case DELETE_WORD:
+        if (_rime.is_composing())
+        {
+          _rime.reset();
+          return;
+        }
+        break;
+      default:
+        _rime.commit_pending();
+        break;
+    }
+    switch (ev)
+    {
       case COPY: if(_typedword.is_selection_not_empty()) send_context_menu_action(android.R.id.copy); break;
       case PASTE: send_context_menu_action(android.R.id.paste); break;
       case CUT: if(_typedword.is_selection_not_empty()) send_context_menu_action(android.R.id.cut); break;
@@ -334,8 +479,12 @@ public final class KeyEventHandler
   {
     switch (s)
     {
-      case Cursor_left: move_cursor(-r); break;
-      case Cursor_right: move_cursor(r); break;
+      case Cursor_left:
+      case Cursor_right:
+        int d = (s == KeyValue.Slider.Cursor_left) ? -r : r;
+        if (!_rime.handle_cursor(d))
+          move_cursor(d);
+        break;
       case Cursor_up: move_cursor_vertical(-r); break;
       case Cursor_down: move_cursor_vertical(r); break;
       case Selection_cursor_left: move_cursor_sel(r, true, key_down); break;
@@ -594,6 +743,9 @@ public final class KeyEventHandler
     public void selection_state_changed(boolean selection_is_ongoing);
     public InputConnection getCurrentInputConnection();
     public Handler getHandler();
+    /** Rime's composition or candidates changed. Arguments might be
+        [null]. */
+    public void set_rime_state(Rime.Context ctx, Rime.Status status);
   }
 
   class Autocapitalisation_callback implements Autocapitalisation.Callback
@@ -601,6 +753,9 @@ public final class KeyEventHandler
     @Override
     public void update_shift_state(boolean should_enable, boolean should_disable)
     {
+      // Uppercase letters are not interpreted by Rime in Chinese mode.
+      if (should_enable && !_rime.is_ascii_mode())
+        return;
       if (should_enable)
         _recv.set_shift_state(true, false);
       else if (should_disable)

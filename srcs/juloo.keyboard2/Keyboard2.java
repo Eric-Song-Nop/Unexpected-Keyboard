@@ -30,16 +30,22 @@ import juloo.keyboard2.dict.Dictionaries;
 import juloo.keyboard2.dict.DictionariesActivity;
 import juloo.keyboard2.dict.DictionarySwitcher;
 import juloo.keyboard2.prefs.LayoutsPreference;
+import juloo.keyboard2.rime.Rime;
+import juloo.keyboard2.rime.RimeCandidatesView;
+import juloo.keyboard2.rime.RimeEngine;
 import juloo.keyboard2.suggestions.CandidatesView;
 import juloo.keyboard2.suggestions.Suggestions;
 
 public class Keyboard2 extends InputMethodService
-  implements SharedPreferences.OnSharedPreferenceChangeListener
+  implements SharedPreferences.OnSharedPreferenceChangeListener,
+             RimeEngine.Listener
 {
   /** The view containing the keyboard and candidates view. */
   private ViewGroup _keyboard_container_view;
   private Keyboard2View _keyboard_layout_view;
   private CandidatesView _candidates_view;
+  private RimeCandidatesView _rime_candidates_view;
+  private RimeEngine _rime_engine;
   private Suggestions _suggestions;
   private KeyEventHandler _keyeventhandler;
   /** If not 'null', the layout to use instead of [_config.current_layout]. */
@@ -139,7 +145,10 @@ public class Keyboard2 extends InputMethodService
     _config = Config.globalConfig();
     Receiver recvr = this.new Receiver();
     _suggestions = new Suggestions(recvr, _config);
-    _keyeventhandler = new KeyEventHandler(_config, recvr, _suggestions);
+    _rime_engine = RimeEngine.instance(this);
+    _rime_engine.add_listener(this);
+    _keyeventhandler = new KeyEventHandler(_config, recvr, _suggestions,
+        _rime_engine);
     KeyValue.Stateful._handler = recvr;
     _config.handler = _keyeventhandler;
     prefs.registerOnSharedPreferenceChangeListener(this);
@@ -155,6 +164,7 @@ public class Keyboard2 extends InputMethodService
     super.onDestroy();
 
     _foldStateTracker.close();
+    _rime_engine.remove_listener(this);
   }
 
   private void create_keyboard_view()
@@ -162,6 +172,14 @@ public class Keyboard2 extends InputMethodService
     _keyboard_container_view = (ViewGroup)inflate_view(R.layout.keyboard);
     _keyboard_layout_view = (Keyboard2View)_keyboard_container_view.findViewById(R.id.keyboard_view);
     _candidates_view = (CandidatesView)_keyboard_container_view.findViewById(R.id.candidates_view);
+    _rime_candidates_view = (RimeCandidatesView)_keyboard_container_view.findViewById(R.id.rime_candidates_view);
+    _rime_candidates_view.set_input(_keyeventhandler.rime());
+  }
+
+  @Override
+  public void on_rime_state_changed(RimeEngine.State state)
+  {
+    _keyeventhandler.config_changed();
   }
 
   InputMethodManager get_imm()
@@ -208,8 +226,13 @@ public class Keyboard2 extends InputMethodService
 
   private void refresh_candidates_view()
   {
+    boolean show_rime = _keyeventhandler.rime_enabled();
+    if (show_rime)
+      _rime_candidates_view.refresh_config(_config);
+    _rime_candidates_view.setVisibility(show_rime ? View.VISIBLE : View.GONE);
     boolean should_show =
-      _config.suggestions_enabled
+      !show_rime
+      && _config.suggestions_enabled
       && _config.editor_config.should_show_candidates_view
       && !_config.split_layout;
     if (should_show)
@@ -241,6 +264,7 @@ public class Keyboard2 extends InputMethodService
     _keyboard_container_view.setBackground(bg);
     _keyboard_layout_view.reset();
     refresh_candidates_view();
+    _keyeventhandler.config_changed();
   }
 
   private KeyboardData refresh_special_layout()
@@ -374,6 +398,7 @@ public class Keyboard2 extends InputMethodService
   {
     super.onFinishInputView(finishingInput);
     _keyboard_layout_view.reset();
+    _keyeventhandler.finished();
   }
 
   @Override
@@ -546,6 +571,11 @@ public class Keyboard2 extends InputMethodService
     public Handler getHandler()
     {
       return _handler;
+    }
+
+    public void set_rime_state(Rime.Context ctx, Rime.Status status)
+    {
+      _rime_candidates_view.update(ctx, status);
     }
 
     public void set_suggestions(Suggestions suggestions)

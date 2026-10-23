@@ -40,6 +40,10 @@ public final class EditorConfig
   // Doesn't override [_config.suggestions_enabled].
   public boolean should_show_candidates_view;
 
+  /** Rime. Whether the editor accepts text typed with Rime. Doesn't override
+      [_config.rime_enabled]. */
+  public boolean rime_allowed;
+
   public EditorConfig() {}
 
   public void refresh(EditorInfo info, Resources res)
@@ -101,6 +105,24 @@ public final class EditorConfig
     initial_sel_end = info.initialSelEnd;
     /* Suggestions */
     should_show_candidates_view = CandidatesView.should_show(info);
+    /* Rime */
+    rime_allowed = rime_should_be_allowed(info);
+  }
+
+  /** Rime is enabled in text fields, except for passwords. */
+  static boolean rime_should_be_allowed(EditorInfo info)
+  {
+    if ((info.inputType & InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT)
+      return false;
+    switch (info.inputType & InputType.TYPE_MASK_VARIATION)
+    {
+      case InputType.TYPE_TEXT_VARIATION_PASSWORD:
+      case InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD:
+      case InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD:
+        return false;
+      default:
+        return true;
+    }
   }
 
   String actionLabel_of_imeAction(int action, Resources res)

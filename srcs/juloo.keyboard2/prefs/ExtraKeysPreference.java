@@ -25,6 +25,8 @@ public class ExtraKeysPreference extends PreferenceCategory
     "meta",
     "compose",
     "voice_typing",
+    "rime_ascii",
+    "rime_switcher",
     "switch_clipboard",
     "accent_aigu",
     "accent_grave",
@@ -197,6 +199,8 @@ public class ExtraKeysPreference extends PreferenceCategory
       case "switch_greekmath": id = R.string.key_descr_switch_greekmath; break;
       case "undo": id = R.string.key_descr_undo; break;
       case "voice_typing": id = R.string.key_descr_voice_typing; break;
+      case "rime_ascii": id = R.string.key_descr_rime_ascii; break;
+      case "rime_switcher": id = R.string.key_descr_rime_switcher; break;
       case "ª": id = R.string.key_descr_ª; break;
       case "º": id = R.string.key_descr_º; break;
       case "switch_clipboard": id = R.string.key_descr_clipboard; break;

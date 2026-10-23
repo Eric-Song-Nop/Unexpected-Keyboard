@@ -46,6 +46,9 @@ public final class Config
   public float slide_step_px;
   public boolean suggestions_enabled;
   public boolean suggestions_add_space;
+  public boolean rime_enabled;
+  public boolean rime_inline_preedit;
+  public boolean rime_show_comments;
   // Let the system handle vibration when false.
   public boolean vibrate_custom;
   // Control the vibration if [vibrate_custom] is true.
@@ -150,6 +153,9 @@ public final class Config
     number_row_symbols = number_row.equals("symbols");
     suggestions_enabled = _prefs.getBoolean("suggestions", true);
     suggestions_add_space = _prefs.getBoolean("suggestions_add_space", true);
+    rime_enabled = _prefs.getBoolean("rime_enabled", false);
+    rime_inline_preedit = _prefs.getBoolean("rime_inline_preedit", false);
+    rime_show_comments = _prefs.getBoolean("rime_show_comments", true);
     // The baseline for the swipe distance correspond to approximately the
     // width of a key in portrait mode, as most layouts have 10 columns.
     // Multipled by the DPI ratio because most swipes are made in the diagonals.

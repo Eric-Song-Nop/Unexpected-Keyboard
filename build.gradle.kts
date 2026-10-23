@@ -18,10 +18,16 @@ android {
 
   defaultConfig {
     applicationId = "juloo.keyboard2"
-    minSdk = 21
+    minSdk = 23
     targetSdk { version = release(36) }
     versionCode = 56
     versionName = "2.1.0"
+
+    externalNativeBuild {
+      ndkBuild {
+        arguments("APP_STL=c++_static")
+      }
+    }
   }
 
   sourceSets {
@@ -29,7 +35,7 @@ android {
       manifest.srcFile("AndroidManifest.xml")
       java.srcDirs("srcs/juloo.keyboard2", "vendor/cdict/java/juloo.cdict")
       res.srcDirs("res", "build/generated-resources")
-      assets.srcDirs("assets")
+      assets.srcDirs("assets", "vendor/rime-assets")
     }
 
     named("test") {
@@ -175,6 +181,16 @@ val initDebugKeystore by tasks.registering(Exec::class) {
   commandLine("keytool", "-genkeypair", "-dname", "cn=d, ou=e, o=b, c=ug", "-alias", "debug", "-keypass", "debug0", "-keystore", "debug.keystore", "-keyalg", "rsa", "-storepass", "debug0", "-validity", "10000")
 }
 
+// Download the prebuilt librime and the default Rime data.
+val fetchRime by tasks.registering(Exec::class) {
+  val script = projectDir.resolve("scripts/fetch_rime.sh")
+  inputs.file(script)
+  outputs.dir(projectDir.resolve("vendor/rime-prebuilt"))
+  outputs.dir(projectDir.resolve("vendor/rime-assets"))
+  workingDir = projectDir
+  commandLine("bash", script.absolutePath)
+}
+
 // latn_qwerty_us is used as a raw resource by the custom layout option.
 val copyRawQwertyUS by tasks.registering(Copy::class) {
   from("srcs/layouts/latn_qwerty_us.xml")
@@ -188,7 +204,7 @@ val copyLayoutDefinitions by tasks.registering(Copy::class) {
 }
 
 tasks.named("preBuild") {
-  dependsOn(initDebugKeystore, copyRawQwertyUS, copyLayoutDefinitions)
+  dependsOn(initDebugKeystore, copyRawQwertyUS, copyLayoutDefinitions, fetchRime)
   // 'mustRunAfter' defines ordering between tasks (which is required by
   // Gradle) but doesn't create a dependency. These rules update files that are
   // checked in the repository that don't need to be updated during regular

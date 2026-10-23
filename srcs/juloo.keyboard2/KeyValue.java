@@ -26,6 +26,8 @@ public final class KeyValue implements Comparable<KeyValue>
     SWITCH_VOICE_TYPING_CHOOSER,
     HIDE_SELF,
     CHANGE_DICTIONARY,
+    RIME_TOGGLE_ASCII,
+    RIME_SWITCHER,
   }
 
   // Must be evaluated in the reverse order of their values.
@@ -663,6 +665,8 @@ public final class KeyValue implements Comparable<KeyValue>
       case "complete_emoji": return statefulKey(Stateful.Complete_emoji);
       case "hide_self": return eventKey("⊻", Event.HIDE_SELF, FLAG_SMALLER_FONT);
       case "change_dictionary": return eventKey(0xE01D, Event.CHANGE_DICTIONARY, 0);
+      case "rime_ascii": return eventKey("中/A", Event.RIME_TOGGLE_ASCII, FLAG_SMALLER_FONT);
+      case "rime_switcher": return eventKey("Rime", Event.RIME_SWITCHER, FLAG_SMALLER_FONT);
 
       /* Key events */
       case "esc": return keyeventKey("Esc", KeyEvent.KEYCODE_ESCAPE, FLAG_SMALLER_FONT);

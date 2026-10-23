@@ -266,6 +266,15 @@ public class Keyboard2View extends View
   {
     DisplayMetrics dm = getContext().getResources().getDisplayMetrics();
     int width = dm.widthPixels;
+    // Insets might not have been dispatched yet when the keyboard is shown
+    // for the first time. Query them directly to avoid drawing the keyboard
+    // under the navigation bar.
+    if (VERSION.SDK_INT >= 35)
+    {
+      WindowInsets wi = getRootWindowInsets();
+      if (wi != null)
+        update_insets(wi);
+    }
     _marginLeft = Math.max(_config.horizontal_margin, _insets_left);
     _marginRight = Math.max(_config.horizontal_margin, _insets_right);
     _marginBottom = _config.margin_bottom + _insets_bottom;
@@ -314,14 +323,31 @@ public class Keyboard2View extends View
     // LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS is set in [Keyboard2#updateSoftInputWindowLayoutParams] for SDK_INT >= 35.
     if (VERSION.SDK_INT < 35)
       return wi;
+    // The insets are often received after the first measure, the layout must
+    // be updated for the keyboard to not overlap with the navigation bar.
+    if (update_insets(wi))
+      requestLayout();
+    return WindowInsets.CONSUMED;
+  }
+
+  /** Returns [true] if the insets changed. */
+  private boolean update_insets(WindowInsets wi)
+  {
     int insets_types =
       WindowInsets.Type.systemBars()
       | WindowInsets.Type.displayCutout();
     Insets insets = wi.getInsets(insets_types);
+    // The IME navigation bar (back and IME switcher buttons) is not always
+    // reported in [systemBars()] when the keyboard is first shown.
+    Insets tappable = wi.getInsets(WindowInsets.Type.tappableElement());
+    int bottom = Math.max(insets.bottom, tappable.bottom);
+    if (insets.left == _insets_left && insets.right == _insets_right
+        && bottom == _insets_bottom)
+      return false;
     _insets_left = insets.left;
     _insets_right = insets.right;
-    _insets_bottom = insets.bottom;
-    return WindowInsets.CONSUMED;
+    _insets_bottom = bottom;
+    return true;
   }
 
   /** Horizontal and vertical position of the 9 indexes. */
